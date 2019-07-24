@@ -3,16 +3,76 @@ import sys
 import ast
 import yaml 
 import json
+import urllib.request
+import config
 
 
 class ApiDocGen(object):
 	"""docstring for ApiDocGen"""
-	def __init__(self, projectRoot, outfile):
+	def __init__(self, argv):
 		super(ApiDocGen, self).__init__()
-		self.__projectRoot = projectRoot
-		self.__outfile = outfile
+		self.__projectRoot = config.INPUT_ROOT
+		self.parseVersion(argv)
+		self.__outfile = ""
 		self.__spec = ""
+		self.__outPath = ""
 
+	def updateVersionFile(self, value):
+		file = open('versions',"w")
+		file.write(value)
+		file.close()
+
+	def readVersionFile(self):
+		versions = ''
+		with open('versions', 'r') as inputFile:
+			versions = inputFile.read()
+		inputFile.close()
+		return versions
+
+	def autoVersion(self):
+		versions = self.readVersionFile()
+		if versions == '':
+			self.__version = '0.0.1'
+			self.updateVersionFile('0.0.1')
+		else:
+			self.__version = versions
+			self.updateVersionFile(self.incrementVersion())
+
+	def incrementVersion(self):
+		temp = self.__version.split(".")
+		print(temp)
+		temp[0] = str(int(temp[0]) + 1)
+		return '.'.join(temp)
+
+
+	def parseVersion(self, argv):
+		if len(argv) > 1:
+			temp = argv[1].split('=')
+			print(temp)
+			lastVersion = self.readVersionFile()
+			if len(temp) > 0 and temp[0] == '--version' and temp[1] > lastVersion:
+				self.__version = temp[1]
+				self.updateVersionFile(temp[1])
+			elif not (temp[1] > lastVersion):
+				raise Exception('last version is ' + lastVersion + ', please check your version number.')
+			else:
+				self.autoVersion()
+		else:
+			self.autoVersion()
+
+	def createVersionDir(self):
+		self.__outPath = 'docs/' + self.__version
+		try:
+			os.mkdir(self.__outPath)
+		except OSError:
+			print ("Creation of the directory %s failed" % self.__outPath)
+		else:
+			print ("Successfully created the directory %s " % self.__outPath)
+
+
+	def prepareOutputDirectory(self):
+		self.createVersionDir()
+		self.__outfile = self.__outPath + '/index.html'
 
 	def parseFiles(self):
 		for root, dirs, files in os.walk(self.__projectRoot, topdown=True):
@@ -20,9 +80,10 @@ class ApiDocGen(object):
 				self.parseFile(os.path.join(root, name))
 
 	def run(self):
+		self.prepareOutputDirectory()
 		self.parseFiles()
 		print(self.__spec)
-		self.yamlToHtml(self.__outfile)
+		self.toHtml()
 
 	def parseFile(self, filename):
 		file_contents = ""
@@ -40,73 +101,17 @@ class ApiDocGen(object):
 
 	def parseDocString(self, docstring):
 		if docstring != "":
-			if docstring.splitlines()[0] == '@route':
+			if docstring.splitlines()[0] == config.KEYWORD:
 				self.__spec += "\n".join(docstring.splitlines()[1:])
 
-	def yamlToHtml(self, outfile):
-		TEMPLATE = """
-		<!DOCTYPE html>
-		<html lang="en">
-		<head>
-			<meta charset="UTF-8">
-			<title>Swagger UI</title>
-			<link href="https://fonts.googleapis.com/css?family=Open+Sans:400,700|Source+Code+Pro:300,600|Titillium+Web:400,600,700" rel="stylesheet">
-			<link rel="stylesheet" type="text/css" href="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/3.2.2/swagger-ui.css" >
-			<style>
-				html
-				{
-					box-sizing: border-box;
-					overflow: -moz-scrollbars-vertical;
-					overflow-y: scroll;
-				}
-				*,
-				*:before,
-				*:after
-				{
-					box-sizing: inherit;
-				}
-
-				body {
-					margin:0;
-					background: #fafafa;
-				}
-			</style>
-		</head>
-		<body>
-
-		<div id="swagger-ui"></div>
-
-		<script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/3.2.2/swagger-ui-bundle.js"> </script>
-		<script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/3.2.2/swagger-ui-standalone-preset.js"> </script>
-		<script>
-		window.onload = function() {
-
-			var spec = %s;
-
-			// Build a system
-			const ui = SwaggerUIBundle({
-				spec: spec,
-				dom_id: '#swagger-ui',
-				deepLinking: true,
-				presets: [
-					SwaggerUIBundle.presets.apis,
-					SwaggerUIStandalonePreset
-				],
-				plugins: [
-					SwaggerUIBundle.plugins.DownloadUrl
-				],
-				layout: "StandaloneLayout"
-			})
-
-			window.ui = ui
-		}
-		</script>
-		</body>
-
-		</html>
-		"""
-
+	def toHtml(self):
+		template = ''
+		with open('template/index.html', 'r') as inputFile:
+			template = inputFile.read()
 		spec = json.loads(self.__spec)
-		file = open(outfile,"w") 
-		file.write(TEMPLATE % json.dumps(spec))
+		file = open(self.__outfile,"w")
+		file.write(template % json.dumps(spec))
 		file.close()
+
+adg = ApiDocGen(sys.argv)
+adg.run()
