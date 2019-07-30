@@ -3,7 +3,8 @@ import sys
 import ast
 import yaml 
 import json
-import urllib.request
+# import urllib.request
+import requests
 import config
 
 
@@ -70,9 +71,24 @@ class ApiDocGen(object):
 			print ("Successfully created the directory %s " % self.__outPath)
 
 
+	def updateDependencies(self):
+		url = 'https://api.cdnjs.com/libraries?search=swagger-ui&fields=version'
+		response = requests.get(url)
+		print(response.text)
+		jsonFormat = json.loads(response.text)
+		print(jsonFormat['results'][0]['version'])
+		baseUrl = 'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/' + jsonFormat['results'][0]['version']
+		filenames = ['/swagger-ui.css', '/swagger-ui-bundle.js', '/swagger-ui-standalone-preset.js']
+		for item in filenames:
+			myfile = requests.get(baseUrl + item)
+			open(self.__outPath + item, 'w').write(myfile.text)
+
+
+
 	def prepareOutputDirectory(self):
 		self.createVersionDir()
 		self.__outfile = self.__outPath + '/index.html'
+		self.updateDependencies()
 
 	def parseFiles(self):
 		for root, dirs, files in os.walk(self.__projectRoot, topdown=True):
