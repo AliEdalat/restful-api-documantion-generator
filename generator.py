@@ -3,8 +3,9 @@ import sys
 import ast
 import yaml 
 import json
-# import urllib.request
 import requests
+import tempfile
+import shutil
 import config
 
 
@@ -73,16 +74,29 @@ class ApiDocGen(object):
 
 	def updateDependencies(self):
 		url = 'https://api.cdnjs.com/libraries?search=swagger-ui&fields=version'
-		response = requests.get(url)
-		print(response.text)
-		jsonFormat = json.loads(response.text)
-		print(jsonFormat['results'][0]['version'])
-		baseUrl = 'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/' + jsonFormat['results'][0]['version']
-		filenames = ['/swagger-ui.css', '/swagger-ui-bundle.js', '/swagger-ui-standalone-preset.js']
-		for item in filenames:
-			myfile = requests.get(baseUrl + item)
-			open(self.__outPath + item, 'w').write(myfile.text)
-
+		try:
+			response = requests.get(url)
+			print(response.text)
+			jsonFormat = json.loads(response.text)
+			print(jsonFormat['results'][0]['version'])
+			baseUrl = 'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/' + jsonFormat['results'][0]['version']
+			filenames = ['/swagger-ui.css', '/swagger-ui-bundle.js', '/swagger-ui-standalone-preset.js']
+			for item in filenames:
+				myfile = requests.get(baseUrl + item)
+				tf = tempfile.TemporaryFile()
+				tf.write(myfile.text.encode())
+				tf.seek(0)
+				if len(tf.read()) > 0:
+					tf.seek(0)
+					open(self.__outPath + item, 'w').write(tf.read().decode())
+					shutil.copy(self.__outPath + item, 'template' + item)
+				else:
+					shutil.copy('template' + item, self.__outPath + item)
+				tf.close()
+		except:
+			print("connection error!")
+			for item in filenames:
+				shutil.copy('template' + item, self.__outPath + item)
 
 
 	def prepareOutputDirectory(self):
@@ -93,7 +107,8 @@ class ApiDocGen(object):
 	def parseFiles(self):
 		for root, dirs, files in os.walk(self.__projectRoot, topdown=True):
 			for name in files:
-				self.parseFile(os.path.join(root, name))
+				if name.endswith('.py'):
+					self.parseFile(os.path.join(root, name))
 
 	def run(self):
 		self.prepareOutputDirectory()
@@ -102,6 +117,7 @@ class ApiDocGen(object):
 		self.toHtml()
 
 	def parseFile(self, filename):
+		print(filename)
 		file_contents = ""
 		with open(filename) as fd:
 			file_contents = fd.read()
