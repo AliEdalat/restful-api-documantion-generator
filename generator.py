@@ -18,6 +18,9 @@ class ApiDocGen(object):
 		self.__outfile = ""
 		self.__spec = ""
 		self.__outPath = ""
+		self.__swaggerDependencyUrl = 'https://api.cdnjs.com/libraries?search=swagger-ui&fields=version'
+		self.__swaggerDependencyfilenames = ['/swagger-ui.css', '/swagger-ui-bundle.js',\
+			'/swagger-ui-standalone-preset.js']
 
 	def updateVersionFile(self, value):
 		file = open('versions',"w")
@@ -34,8 +37,8 @@ class ApiDocGen(object):
 	def autoVersion(self):
 		versions = self.readVersionFile()
 		if versions == '':
-			self.__version = '0.0.1'
-			self.updateVersionFile('0.0.1')
+			self.__version = config.FIRST_VERSION
+			self.updateVersionFile(self.incrementVersion())
 		else:
 			self.__version = versions
 			self.updateVersionFile(self.incrementVersion())
@@ -72,31 +75,38 @@ class ApiDocGen(object):
 			print ("Successfully created the directory %s " % self.__outPath)
 
 
-	def updateDependencies(self):
-		url = 'https://api.cdnjs.com/libraries?search=swagger-ui&fields=version'
-		filenames = ['/swagger-ui.css', '/swagger-ui-bundle.js', '/swagger-ui-standalone-preset.js']
-		try:
-			response = requests.get(url)
-			print(response.text)
-			jsonFormat = json.loads(response.text)
-			print(jsonFormat['results'][0]['version'])
-			baseUrl = 'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/' + jsonFormat['results'][0]['version']
-			for item in filenames:
-				myfile = requests.get(baseUrl + item)
-				tf = tempfile.TemporaryFile()
-				tf.write(myfile.text.encode())
+	def handleDependenciesOffline(self):
+		for item in self.__swaggerDependencyfilenames:
+			shutil.copy('template' + item, self.__outPath + item)
+
+	def handleDependenciesOnline(self, baseUrl):
+		for item in self.__swaggerDependencyfilenames:
+			myfile = requests.get(baseUrl + item)
+			tf = tempfile.TemporaryFile()
+			tf.write(myfile.text.encode())
+			tf.seek(0)
+			if len(tf.read()) > 0:
 				tf.seek(0)
-				if len(tf.read()) > 0:
-					tf.seek(0)
-					open(self.__outPath + item, 'w').write(tf.read().decode())
-					shutil.copy(self.__outPath + item, 'template' + item)
-				else:
-					shutil.copy('template' + item, self.__outPath + item)
-				tf.close()
+				open(self.__outPath + item, 'w').write(tf.read().decode())
+				shutil.copy(self.__outPath + item, 'template' + item)
+			else:
+				shutil.copy('template' + item, self.__outPath + item)
+			tf.close()
+
+	def updateDependencies(self):
+		try:
+			if config.ONLINE:
+				response = requests.get(self.__swaggerDependencyUrl)
+				print(response.text)
+				jsonFormat = json.loads(response.text)
+				print(jsonFormat['results'][0]['version'])
+				baseUrl = 'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/' + jsonFormat['results'][0]['version']
+				self.handleDependenciesOnline(baseUrl)
+			else:
+				self.handleDependenciesOffline()
 		except:
 			print("connection error!")
-			for item in filenames:
-				shutil.copy('template' + item, self.__outPath + item)
+			self.handleDependenciesOffline()
 
 
 	def prepareOutputDirectory(self):
@@ -124,6 +134,10 @@ class ApiDocGen(object):
 
 	def parseJsonFile(self, filename):
 		print(filename)
+		file_contents = ""
+		with open(filename) as fd:
+			file_contents = fd.read()
+		self.parseDocString(file_contents)
 
 	def parsePythonFile(self, filename):
 		print(filename)

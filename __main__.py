@@ -1,3 +1,4 @@
+import sys
 import generator
 
 if __name__ == '__main__':
